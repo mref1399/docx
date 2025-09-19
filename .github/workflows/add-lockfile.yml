@@ -1,1 +1,33 @@
+name: Generate package-lock.json
+
+on:
+  workflow_dispatch: # اجرا دستی از بخش Actions
+  push:
+    paths:
+      - 'package.json' # فقط وقتی package.json تغییر کرد
+
+jobs:
+  generate-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Commit package-lock.json
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "Add/Update package-lock.json" || echo "No changes to commit"
+          git push
 
