@@ -1,114 +1,51 @@
-import express from "express";
-import bodyParser from "body-parser";
-import { Document, Packer, Paragraph, TextRun, AlignmentType, FootnoteReferenceRun, Footnote, Footnotes } from "docx";
+import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from "docx";
+import fs from "fs";
 
-const app = express();
-app.use(bodyParser.json({ limit: "10mb" }));
+// متن نمونه
+const content = `
+این یک پاراگراف نمونه است که شامل حروف یونانی α، β، γ و نمادهای ریاضی ∑، √، π می‌باشد.
+این متن برای تست راست‌چین بودن، فونت B Nazanin، اندازه 14 و فاصله خطوط 1 ایجاد شده است.
+`;
 
-// تابع تشخیص فارسی
-function hasPersian(text) {
-    return /[\u0600-\u06FF]/.test(text);
-}
-
-// تابع تشخیص انگلیسی
-function hasEnglish(text) {
-    return /[A-Za-z]/.test(text);
-}
-
-// تابع ساخت پاورقی‌ها
-function createFootnotes(englishWords) {
-    return englishWords.map((entry, i) =>
-        new Footnote({
-            id: i + 1,
+const doc = new Document({
+    sections: [
+        {
+            properties: {},
             children: [
+                // عنوان
                 new Paragraph({
+                    alignment: AlignmentType.RIGHT,
+                    heading: HeadingLevel.HEADING_1,
                     children: [
                         new TextRun({
-                            text: `${entry.farsi} = ${entry.english}`,
+                            text: "عنوان اصلی",
+                            bold: true,
                             font: "B Nazanin",
-                            size: 28
-                        })
-                    ]
-                })
-            ]
-        })
-    );
-}
+                            size: 28, // فونت در docx بر حسب half-points است (14 * 2 = 28)
+                        }),
+                    ],
+                }),
 
-app.post("/to-docx", async (req, res) => {
-    try {
-        const { text } = req.body;
-        if (!text) {
-            return res.status(400).send({ error: "متن ارسال نشده است" });
-        }
-
-        const paragraphs = [];
-        const englishRefs = [];
-        let footnoteIndex = 1;
-
-        for (let line of text.split("\n")) {
-            const trimmed = line.trim();
-            let alignment = AlignmentType.JUSTIFIED;
-
-            // وسط چین کردن عناوین جدول یا شکل
-            if (/^(جدول\s+\d+\s*-)/.test(trimmed) || /^(شکل\s+\d+\s*-)/.test(trimmed)) {
-                alignment = AlignmentType.CENTER;
-            }
-
-            const runs = [];
-            const words = trimmed.split(" ");
-
-            for (let i = 0; i < words.length; i++) {
-                const w = words[i];
-                if (hasPersian(w)) {
-                    runs.push(new TextRun({
-                        text: w + " ",
-                        font: "B Nazanin",
-                        size: 28
-                    }));
-                } else if (hasEnglish(w)) {
-                    const prevWord = words[i - 1] || "";
-                    englishRefs.push({ farsi: prevWord, english: w });
-                    runs.push(new TextRun({
-                        text: w,
-                        font: "Times New Roman",
-                        size: 28
-                    }));
-                    runs.push(new FootnoteReferenceRun(footnoteIndex));
-                    footnoteIndex++;
-                    runs.push(new TextRun(" ")); // فاصله بعد از انگلیسی
-                } else {
-                    runs.push(new TextRun(w + " "));
-                }
-            }
-
-            paragraphs.push(new Paragraph({
-                alignment,
-                spacing: { line: 276 }, // تقریباً 1.15
-                children: runs
-            }));
-        }
-
-        const doc = new Document({
-            sections: [{
-                children: paragraphs,
-                footnotes: new Footnotes({
-                    children: createFootnotes(englishRefs)
-                })
-            }]
-        });
-
-        const buffer = await Packer.toBuffer(doc);
-
-        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        res.setHeader("Content-Disposition", "attachment; filename=output.docx");
-        res.send(buffer);
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).send({ error: "خطا در ساخت فایل DOCX" });
-    }
+                // پاراگراف متن
+                new Paragraph({
+                    alignment: AlignmentType.JUSTIFIED, // تراز دو طرفه
+                    spacing: { line: 240 }, // فاصله خطوط 1 (240 یعنی 1 خط)
+                    rightToLeft: true, // راست‌چین
+                    children: [
+                        new TextRun({
+                            text: content,
+                            font: "B Nazanin",
+                            size: 28, // 14 point
+                        }),
+                    ],
+                }),
+            ],
+        },
+    ],
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// خروجی فایل ورد
+Packer.toBuffer(doc).then((buffer) => {
+    fs.writeFileSync("test.docx", buffer);
+    console.log("فایل test.docx با موفقیت ساخته شد");
+});
