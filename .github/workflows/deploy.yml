@@ -1,4 +1,4 @@
-name: Build and Deploy
+name: Build and Deploy to Kubernetes
 
 on:
   push:
@@ -6,58 +6,46 @@ on:
       - main
 
 jobs:
-  docker-build-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Log in to HamDocker
-        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login registry.hamdocker.ir -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+      - name: Log in to Hamravesh Docker Registry
+        run: echo "${{ secrets.HAMD_REGISTRY_PASS }}" | docker login registry.hamdocker.ir -u "${{ secrets.HAMD_REGISTRY_USER }}" --password-stdin
 
       - name: Build Docker image
         run: |
-          docker build -t registry.hamdocker.ir/mrebrahimif/todox:main -t registry.hamdocker.ir/mrebrahimif/todox:latest .
+          IMAGE=registry.hamdocker.ir/${{ secrets.HAMD_REGISTRY_USER }}/docx-webhook
+          docker build -t $IMAGE:main -t $IMAGE:latest .
+          docker push $IMAGE:main
+          docker push $IMAGE:latest
 
-      - name: Push Docker image
-        run: |
-          docker push registry.hamdocker.ir/mrebrahimif/todox:main
-          docker push registry.hamdocker.ir/mrebrahimif/todox:latest
-
-  deploy-to-k8s:
-    needs: docker-build-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Generate kubeconfig file
+      - name: Create kubeconfig file
         run: |
           mkdir -p ~/.kube
-          cat <<EOF > kubeconfig.yaml
+          cat <<EOF > ~/.kube/config
           apiVersion: v1
+          kind: Config
           clusters:
           - cluster:
-              certificate-authority-data: ${CERT_AUTH_DATA}
-              server: ${CLUSTER_ENDPOINT}
-            name: ${CLUSTER_NAME}
+              certificate-authority-data: ${{ secrets.CERT_AUTH_DATA }}
+              server: ${{ secrets.CLUSTER_ENDPOINT }}
+            name: ${{ secrets.CLUSTER_NAME }}
           contexts:
           - context:
-              cluster: ${CLUSTER_NAME}
-              namespace: mrebrahimif
-              user: ${CLUSTER_USER}
-            name: ${CLUSTER_NAME}-mrebrahimif
-          current-context: ${CLUSTER_NAME}-mrebrahimif
-          kind: Config
-          preferences: {}
+              cluster: ${{ secrets.CLUSTER_NAME }}
+              user: ${{ secrets.CLUSTER_USER }}
+            name: ${{ secrets.CLUSTER_NAME }}
+          current-context: ${{ secrets.CLUSTER_NAME }}
           users:
-          - name: ${CLUSTER_USER}
+          - name: ${{ secrets.CLUSTER_USER }}
             user:
-              token: ${CLUSTER_TOKEN}
+              token: ${{ secrets.CLUSTER_TOKEN }}
           EOF
-        env:
-          CERT_AUTH_DATA: ${{ secrets.CERT_AUTH_DATA }}
-          CLUSTER_ENDPOINT: ${{ secrets.CLUSTER_ENDPOINT }}
-          CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
-          CLUSTER_USER: ${{ secrets.CLUSTER_USER }}
-          CLUSTER_TOKEN: ${{ secrets.CLUSTER_TOKEN }}
 
       - name: Deploy to Kubernetes
-        run: kubectl --kubeconfig=kubeconfig.yaml set image deployment/todox todox=registry.hamdocker.ir/mrebrahimif/todox:main -n mrebrahimif
+        run: |
+          kubectl set image deployment/docx-webhook docx-webhook=registry.hamdocker.ir/${{ secrets.HAMD_REGISTRY_USER }}/docx-webhook:latest
+          kubectl rollout status deployment/docx-webhook
