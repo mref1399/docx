@@ -1,15 +1,13 @@
-FROM node:18-alpine
-RUN npm install -g npm@latest
+FROM node:20-alpine
+
 WORKDIR /app
 
+# ارتقای npm (اینجا سازگار خواهد بود)
+RUN npm install -g npm@latest
+
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install
 
 COPY . .
-
-EXPOSE 3000
-
-RUN addgroup app && adduser -S -G app app
-USER app
 
 CMD ["node", "index.js"]
