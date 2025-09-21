@@ -1,7 +1,10 @@
 name: Build and Push Docker Image
 
 on:
-  workflow_dispatch: # اجرا به صورت دستی از تب Actions
+  workflow_dispatch: # اجرا به صورت دستی
+  push:
+    branches:
+      - main # اجرا خودکار روی پوش به main
 
 jobs:
   build:
