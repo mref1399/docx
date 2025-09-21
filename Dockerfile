@@ -2,12 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# ارتقای npm (اینجا سازگار خواهد بود)
-RUN npm install -g npm@latest
-
 COPY package*.json ./
-RUN npm install
+
+# نصب دقیق نسخه docx سازگار
+RUN npm install docx@8.5.0 --production
 
 COPY . .
 
+EXPOSE 3000
+
 CMD ["node", "index.js"]
+
