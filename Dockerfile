@@ -1,15 +1,17 @@
 FROM node:20-alpine
 
+# ساخت پوشه اپ
 WORKDIR /app
 
+# نصب dependency‌ها
 COPY package*.json ./
+RUN npm ci --only=production
 
-# نصب دقیق نسخه docx سازگار
-RUN npm install docx@8.5.0 --production
-
+# اضافه کردن سورس
 COPY . .
 
+# پورتی که اپ گوش می‌ده
 EXPOSE 3000
 
-CMD ["node", "index.js"]
-
+# دستور اجرا
+CMD ["node", "src/webhook.js"]
