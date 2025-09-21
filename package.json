@@ -1,5 +1,5 @@
 {
-  "name": "text-to-word-converter",
+  "name": "docx",
   "version": "1.0.0",
   "description": "Convert text to Word document",
   "main": "server.js",
