@@ -1,23 +1,25 @@
-# استفاده از Node.js نسخه 18 alpine (سبک‌تر)
 FROM node:18-alpine
 
-# تنظیم working directory
+# نصب build tools
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
-# کپی کردن package.json و package-lock.json
+# کپی package files
 COPY package*.json ./
 
 # نصب dependencies
-RUN npm install --only=production
+RUN npm ci --only=production
 
-# کپی کردن باقی فایل‌ها
+# کپی کد
 COPY . .
 
-# expose کردن پورت
-EXPOSE 3000
-
-# تنظیم متغیر محیطی برای پورت
+# تنظیم متغیرهای محیطی
+ENV NODE_ENV=production
 ENV PORT=3000
 
-# دستور اجرا
-CMD ["npm", "start"]
+# expose port
+EXPOSE 3000
+
+# دستور اجرا (مهم!)
+CMD ["node", "server.js"]
