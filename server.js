@@ -61,10 +61,11 @@ function parseTextToParagraphs(text) {
     line = line.trim();
     
     if (line === '') {
+      // Empty line with minimal spacing
       paragraphs.push(
         new Paragraph({
           children: [new TextRun({ text: '' })],
-          spacing: { after: 200 }
+          spacing: { after: 0 }
         })
       );
       continue;
@@ -89,10 +90,12 @@ function parseTextToParagraphs(text) {
               }
             })
           ],
-          alignment: AlignmentType.RIGHT,
+          alignment: AlignmentType.JUSTIFIED,
+          rightToLeft: true,
+          bidirectional: true,
           spacing: {
-            before: 300,
-            after: 200,
+            before: 200,
+            after: 100,
             line: 360,
             lineRule: 'auto'
           },
@@ -108,30 +111,33 @@ function parseTextToParagraphs(text) {
         })
       );
     } else {
-      // Regular paragraph with Normal style and separate fonts
+      // Normal paragraph with explicit RTL and minimal spacing
       paragraphs.push(
         new Paragraph({
           children: [
             new TextRun({
               text: line,
-              size: 28, // 14pt
+              size: 28,
               font: {
-                ascii: 'Times New Roman',        // Latin text
-                eastAsia: 'Times New Roman',     // East Asian text  
-                hansi: 'Times New Roman',        // Hansi text
-                cs: 'B Nazanin'                  // Complex Scripts (Persian/Arabic)
+                ascii: 'Times New Roman',
+                eastAsia: 'Times New Roman', 
+                hansi: 'Times New Roman',
+                cs: 'B Nazanin'
               }
             })
           ],
           style: 'Normal',
-          alignment: AlignmentType.RIGHT,
+          alignment: AlignmentType.JUSTIFIED,
+          rightToLeft: true,
+          bidirectional: true,
           spacing: {
-            line: 240,        // Single line spacing
+            line: 240,
             lineRule: 'auto',
-            after: 200
+            after: 0,      // No spacing after paragraph
+            before: 0      // No spacing before paragraph
           },
           indent: {
-            firstLine: 708    // 0.5cm first line indent
+            firstLine: 708
           }
         })
       );
@@ -165,7 +171,9 @@ app.post('/webhook', async (req, res) => {
               bottom: 1440,
               left: 1440
             }
-          }
+          },
+          type: 'nextPage',
+          bidirectional: true
         },
         children: paragraphs
       }],
@@ -177,16 +185,19 @@ app.post('/webhook', async (req, res) => {
               font: {
                 ascii: 'Times New Roman',
                 eastAsia: 'Times New Roman',
-                hansi: 'Times New Roman',
+                hansi: 'Times New Roman', 
                 cs: 'B Nazanin'
               }
             },
             paragraph: {
-              alignment: AlignmentType.RIGHT,
+              alignment: AlignmentType.JUSTIFIED,
+              rightToLeft: true,
+              bidirectional: true,
               spacing: {
                 line: 240,
                 lineRule: 'auto',
-                after: 200
+                after: 0,
+                before: 0
               },
               indent: {
                 firstLine: 708
@@ -201,23 +212,26 @@ app.post('/webhook', async (req, res) => {
             basedOn: 'Normal',
             next: 'Normal',
             run: {
-              size: 28, // 14pt
+              size: 28,
               font: {
-                ascii: 'Times New Roman',      // Latin text font
-                eastAsia: 'Times New Roman',   // East Asian font
-                hansi: 'Times New Roman',      // Hansi font  
-                cs: 'B Nazanin'                // Complex Scripts font (Persian)
+                ascii: 'Times New Roman',
+                eastAsia: 'Times New Roman',
+                hansi: 'Times New Roman',
+                cs: 'B Nazanin'
               }
             },
             paragraph: {
-              alignment: AlignmentType.RIGHT,  // RTL alignment
+              alignment: AlignmentType.JUSTIFIED,
+              rightToLeft: true,
+              bidirectional: true,
               spacing: {
-                line: 240,                     // Single line spacing
-                lineRule: 'auto', 
-                after: 200
+                line: 240,
+                lineRule: 'auto',
+                after: 0,     // Zero spacing between paragraphs
+                before: 0
               },
               indent: {
-                firstLine: 708                 // 0.5cm first line indent
+                firstLine: 708
               }
             }
           }
@@ -235,7 +249,7 @@ app.post('/webhook', async (req, res) => {
       success: true,
       downloadUrl: `https://docx.darkube.app/download/${fileName}`,
       fileName: fileName,
-      message: "DOCX file created with Normal style, RTL alignment and mixed fonts",
+      message: "DOCX file with proper RTL, Normal style and minimal paragraph spacing",
       fileSize: buffer.length
     });
 
