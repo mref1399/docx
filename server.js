@@ -42,7 +42,7 @@ function isHeading(text) {
 function getHeadingLevel(text) {
   const match = text.match(/^#+/);
   if (match) {
-    return Math.min(match[0].length, 6); // Max 6 levels
+    return Math.min(match[0].length, 6);
   }
   return 0;
 }
@@ -61,11 +61,9 @@ function parseTextToParagraphs(text) {
     line = line.trim();
     
     if (line === '') {
-      // Add empty paragraph for spacing
       paragraphs.push(
         new Paragraph({
           children: [new TextRun({ text: '' })],
-          style: 'normal',
           spacing: { after: 200 }
         })
       );
@@ -91,8 +89,7 @@ function parseTextToParagraphs(text) {
               }
             })
           ],
-          alignment: AlignmentType.JUSTIFIED,
-          bidirectional: true,
+          alignment: AlignmentType.RIGHT,
           spacing: {
             before: 300,
             after: 200,
@@ -100,7 +97,7 @@ function parseTextToParagraphs(text) {
             lineRule: 'auto'
           },
           indent: {
-            firstLine: 708 // 0.5 cm = 708 twips
+            firstLine: 708
           },
           heading: level === 1 ? HeadingLevel.HEADING_1 : 
                   level === 2 ? HeadingLevel.HEADING_2 :
@@ -111,22 +108,31 @@ function parseTextToParagraphs(text) {
         })
       );
     } else {
-      // Regular paragraph with normal style
+      // Regular paragraph with Normal style and separate fonts
       paragraphs.push(
         new Paragraph({
           children: [
             new TextRun({
               text: line,
+              size: 28, // 14pt
               font: {
-                ascii: 'Times New Roman',
-                eastAsia: 'Times New Roman', 
-                hansi: 'Times New Roman',
-                cs: 'B Nazanin'
+                ascii: 'Times New Roman',        // Latin text
+                eastAsia: 'Times New Roman',     // East Asian text  
+                hansi: 'Times New Roman',        // Hansi text
+                cs: 'B Nazanin'                  // Complex Scripts (Persian/Arabic)
               }
             })
           ],
-          style: 'normal',
-          bidirectional: true
+          style: 'Normal',
+          alignment: AlignmentType.RIGHT,
+          spacing: {
+            line: 240,        // Single line spacing
+            lineRule: 'auto',
+            after: 200
+          },
+          indent: {
+            firstLine: 708    // 0.5cm first line indent
+          }
         })
       );
     }
@@ -147,17 +153,15 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    // Parse text into paragraphs
     const paragraphs = parseTextToParagraphs(text);
 
-    // Create DOCX document with RTL and Persian support
     const doc = new Document({
       sections: [{
         properties: {
           page: {
             margin: {
-              top: 1440, // 1 inch = 1440 twips
-              right: 1440,
+              top: 1440,
+              right: 1440, 
               bottom: 1440,
               left: 1440
             }
@@ -169,55 +173,51 @@ app.post('/webhook', async (req, res) => {
         default: {
           document: {
             run: {
+              size: 28,
               font: {
                 ascii: 'Times New Roman',
                 eastAsia: 'Times New Roman',
-                hansi: 'Times New Roman', 
+                hansi: 'Times New Roman',
                 cs: 'B Nazanin'
-              },
-              size: 28, // 14pt
-              rightToLeft: true
+              }
             },
             paragraph: {
-              alignment: AlignmentType.JUSTIFIED,
-              bidirectional: true,
+              alignment: AlignmentType.RIGHT,
               spacing: {
-                line: 240, // Single line spacing
+                line: 240,
                 lineRule: 'auto',
                 after: 200
               },
               indent: {
-                firstLine: 708 // 0.5 cm first line indent
+                firstLine: 708
               }
             }
           }
         },
         paragraphStyles: [
           {
-            id: 'normal',
+            id: 'Normal',
             name: 'Normal',
             basedOn: 'Normal',
             next: 'Normal',
             run: {
-              font: {
-                ascii: 'Times New Roman',
-                eastAsia: 'Times New Roman',
-                hansi: 'Times New Roman',
-                cs: 'B Nazanin'
-              },
               size: 28, // 14pt
-              rightToLeft: true
+              font: {
+                ascii: 'Times New Roman',      // Latin text font
+                eastAsia: 'Times New Roman',   // East Asian font
+                hansi: 'Times New Roman',      // Hansi font  
+                cs: 'B Nazanin'                // Complex Scripts font (Persian)
+              }
             },
             paragraph: {
-              alignment: AlignmentType.JUSTIFIED,
-              bidirectional: true,
+              alignment: AlignmentType.RIGHT,  // RTL alignment
               spacing: {
-                line: 240, // Single line spacing  
-                lineRule: 'auto',
+                line: 240,                     // Single line spacing
+                lineRule: 'auto', 
                 after: 200
               },
               indent: {
-                firstLine: 708 // 0.5 cm = 708 twips
+                firstLine: 708                 // 0.5cm first line indent
               }
             }
           }
@@ -225,20 +225,17 @@ app.post('/webhook', async (req, res) => {
       }
     });
 
-    // Generate unique filename
     const fileName = `document_${Date.now()}.docx`;
     const filePath = path.join(uploadsDir, fileName);
 
-    // Save file
     const buffer = await Packer.toBuffer(doc);
     fs.writeFileSync(filePath, buffer);
 
-    // Return JSON response
     res.json({
       success: true,
       downloadUrl: `https://docx.darkube.app/download/${fileName}`,
       fileName: fileName,
-      message: "DOCX file created successfully with RTL Persian formatting",
+      message: "DOCX file created with Normal style, RTL alignment and mixed fonts",
       fileSize: buffer.length
     });
 
