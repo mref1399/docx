@@ -64,7 +64,8 @@ function parseTextToParagraphs(text) {
       // Add empty paragraph for spacing
       paragraphs.push(
         new Paragraph({
-          children: [new TextRun({ text: '', size: 28 })],
+          children: [new TextRun({ text: '' })],
+          style: 'normal',
           spacing: { after: 200 }
         })
       );
@@ -81,16 +82,25 @@ function parseTextToParagraphs(text) {
             new TextRun({
               text: headingText,
               bold: true,
-              size: 32 - (level * 2), // Decreasing size for deeper levels
-              font: 'B Nazanin'
+              size: 32 - (level * 2),
+              font: {
+                ascii: 'Times New Roman',
+                eastAsia: 'Times New Roman',
+                hansi: 'Times New Roman',
+                cs: 'B Nazanin'
+              }
             })
           ],
           alignment: AlignmentType.JUSTIFIED,
+          bidirectional: true,
           spacing: {
             before: 300,
             after: 200,
-            line: 360, // 1.5 line spacing
+            line: 360,
             lineRule: 'auto'
+          },
+          indent: {
+            firstLine: 708 // 0.5 cm = 708 twips
           },
           heading: level === 1 ? HeadingLevel.HEADING_1 : 
                   level === 2 ? HeadingLevel.HEADING_2 :
@@ -101,22 +111,22 @@ function parseTextToParagraphs(text) {
         })
       );
     } else {
-      // Regular paragraph
+      // Regular paragraph with normal style
       paragraphs.push(
         new Paragraph({
           children: [
             new TextRun({
               text: line,
-              size: 28, // 14pt = 28 half-points
-              font: 'B Nazanin'
+              font: {
+                ascii: 'Times New Roman',
+                eastAsia: 'Times New Roman', 
+                hansi: 'Times New Roman',
+                cs: 'B Nazanin'
+              }
             })
           ],
-          alignment: AlignmentType.JUSTIFIED,
-          spacing: {
-            after: 200,
-            line: 240, // Single line spacing (240 = 1.0)
-            lineRule: 'auto'
-          }
+          style: 'normal',
+          bidirectional: true
         })
       );
     }
@@ -140,7 +150,7 @@ app.post('/webhook', async (req, res) => {
     // Parse text into paragraphs
     const paragraphs = parseTextToParagraphs(text);
 
-    // Create DOCX document with Persian support
+    // Create DOCX document with RTL and Persian support
     const doc = new Document({
       sections: [{
         properties: {
@@ -159,14 +169,25 @@ app.post('/webhook', async (req, res) => {
         default: {
           document: {
             run: {
-              font: 'B Nazanin',
-              size: 28 // 14pt
+              font: {
+                ascii: 'Times New Roman',
+                eastAsia: 'Times New Roman',
+                hansi: 'Times New Roman', 
+                cs: 'B Nazanin'
+              },
+              size: 28, // 14pt
+              rightToLeft: true
             },
             paragraph: {
               alignment: AlignmentType.JUSTIFIED,
+              bidirectional: true,
               spacing: {
-                line: 240,
-                lineRule: 'auto'
+                line: 240, // Single line spacing
+                lineRule: 'auto',
+                after: 200
+              },
+              indent: {
+                firstLine: 708 // 0.5 cm first line indent
               }
             }
           }
@@ -178,14 +199,25 @@ app.post('/webhook', async (req, res) => {
             basedOn: 'Normal',
             next: 'Normal',
             run: {
-              font: 'B Nazanin',
-              size: 28
+              font: {
+                ascii: 'Times New Roman',
+                eastAsia: 'Times New Roman',
+                hansi: 'Times New Roman',
+                cs: 'B Nazanin'
+              },
+              size: 28, // 14pt
+              rightToLeft: true
             },
             paragraph: {
               alignment: AlignmentType.JUSTIFIED,
+              bidirectional: true,
               spacing: {
-                line: 240,
-                lineRule: 'auto'
+                line: 240, // Single line spacing  
+                lineRule: 'auto',
+                after: 200
+              },
+              indent: {
+                firstLine: 708 // 0.5 cm = 708 twips
               }
             }
           }
@@ -206,7 +238,7 @@ app.post('/webhook', async (req, res) => {
       success: true,
       downloadUrl: `https://docx.darkube.app/download/${fileName}`,
       fileName: fileName,
-      message: "DOCX file created successfully with Persian formatting",
+      message: "DOCX file created successfully with RTL Persian formatting",
       fileSize: buffer.length
     });
 
