@@ -1,5 +1,5 @@
 const express = require('express');
-const { Document, Packer, Paragraph, TextRun } = require('docx');
+const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } = require('docx');
 const fs = require('fs');
 const path = require('path');
 
@@ -33,7 +33,99 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-// Webhook endpoint - now returns JSON
+// Function to detect if text is a heading (starts with #)
+function isHeading(text) {
+  return text.trim().startsWith('#');
+}
+
+// Function to get heading level
+function getHeadingLevel(text) {
+  const match = text.match(/^#+/);
+  if (match) {
+    return Math.min(match[0].length, 6); // Max 6 levels
+  }
+  return 0;
+}
+
+// Function to clean heading text (remove # symbols)
+function cleanHeadingText(text) {
+  return text.replace(/^#+\s*/, '');
+}
+
+// Function to parse text and create paragraphs
+function parseTextToParagraphs(text) {
+  const lines = text.split('\n');
+  const paragraphs = [];
+
+  for (let line of lines) {
+    line = line.trim();
+    
+    if (line === '') {
+      // Add empty paragraph for spacing
+      paragraphs.push(
+        new Paragraph({
+          children: [new TextRun({ text: '', size: 28 })],
+          spacing: { after: 200 }
+        })
+      );
+      continue;
+    }
+
+    if (isHeading(line)) {
+      const level = getHeadingLevel(line);
+      const headingText = cleanHeadingText(line);
+      
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: headingText,
+              bold: true,
+              size: 32 - (level * 2), // Decreasing size for deeper levels
+              font: 'B Nazanin'
+            })
+          ],
+          alignment: AlignmentType.JUSTIFIED,
+          spacing: {
+            before: 300,
+            after: 200,
+            line: 360, // 1.5 line spacing
+            lineRule: 'auto'
+          },
+          heading: level === 1 ? HeadingLevel.HEADING_1 : 
+                  level === 2 ? HeadingLevel.HEADING_2 :
+                  level === 3 ? HeadingLevel.HEADING_3 :
+                  level === 4 ? HeadingLevel.HEADING_4 :
+                  level === 5 ? HeadingLevel.HEADING_5 :
+                  HeadingLevel.HEADING_6
+        })
+      );
+    } else {
+      // Regular paragraph
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: line,
+              size: 28, // 14pt = 28 half-points
+              font: 'B Nazanin'
+            })
+          ],
+          alignment: AlignmentType.JUSTIFIED,
+          spacing: {
+            after: 200,
+            line: 240, // Single line spacing (240 = 1.0)
+            lineRule: 'auto'
+          }
+        })
+      );
+    }
+  }
+
+  return paragraphs;
+}
+
+// Webhook endpoint
 app.post('/webhook', async (req, res) => {
   try {
     const { text } = req.body;
@@ -45,22 +137,60 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    // Create DOCX document
+    // Parse text into paragraphs
+    const paragraphs = parseTextToParagraphs(text);
+
+    // Create DOCX document with Persian support
     const doc = new Document({
       sections: [{
-        properties: {},
-        children: [
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: text,
-                size: 24,
-                font: 'Arial'
-              }),
-            ],
-          }),
-        ],
+        properties: {
+          page: {
+            margin: {
+              top: 1440, // 1 inch = 1440 twips
+              right: 1440,
+              bottom: 1440,
+              left: 1440
+            }
+          }
+        },
+        children: paragraphs
       }],
+      styles: {
+        default: {
+          document: {
+            run: {
+              font: 'B Nazanin',
+              size: 28 // 14pt
+            },
+            paragraph: {
+              alignment: AlignmentType.JUSTIFIED,
+              spacing: {
+                line: 240,
+                lineRule: 'auto'
+              }
+            }
+          }
+        },
+        paragraphStyles: [
+          {
+            id: 'normal',
+            name: 'Normal',
+            basedOn: 'Normal',
+            next: 'Normal',
+            run: {
+              font: 'B Nazanin',
+              size: 28
+            },
+            paragraph: {
+              alignment: AlignmentType.JUSTIFIED,
+              spacing: {
+                line: 240,
+                lineRule: 'auto'
+              }
+            }
+          }
+        ]
+      }
     });
 
     // Generate unique filename
@@ -71,12 +201,12 @@ app.post('/webhook', async (req, res) => {
     const buffer = await Packer.toBuffer(doc);
     fs.writeFileSync(filePath, buffer);
 
-    // Return JSON response with download link
+    // Return JSON response
     res.json({
       success: true,
       downloadUrl: `https://docx.darkube.app/download/${fileName}`,
       fileName: fileName,
-      message: "DOCX file created successfully",
+      message: "DOCX file created successfully with Persian formatting",
       fileSize: buffer.length
     });
 
@@ -96,7 +226,6 @@ app.get('/download/:filename', (req, res) => {
     const fileName = req.params.filename;
     const filePath = path.join(uploadsDir, fileName);
 
-    // Check if file exists
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         error: 'File not found',
@@ -104,12 +233,10 @@ app.get('/download/:filename', (req, res) => {
       });
     }
 
-    // Send file for download
     res.download(filePath, fileName, (err) => {
       if (err) {
         console.error('Error sending file:', err);
       } else {
-        // Delete file after download (optional)
         setTimeout(() => {
           try {
             fs.unlinkSync(filePath);
@@ -117,7 +244,7 @@ app.get('/download/:filename', (req, res) => {
           } catch (deleteError) {
             console.error('Error deleting file:', deleteError);
           }
-        }, 60000); // Delete after 1 minute
+        }, 60000);
       }
     });
 
@@ -130,7 +257,7 @@ app.get('/download/:filename', (req, res) => {
   }
 });
 
-// List available files (for debugging)
+// List available files
 app.get('/files', (req, res) => {
   try {
     const files = fs.readdirSync(uploadsDir);
