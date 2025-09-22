@@ -1,15 +1,17 @@
+# استفاده از Node.js 18 Alpine
 FROM node:18-alpine
 
-# نصب build tools
+# نصب dependencies سیستمی
 RUN apk add --no-cache python3 make g++
 
+# تنظیم working directory
 WORKDIR /app
 
-# کپی package files
+# کپی فایل‌های package
 COPY package*.json ./
 
-# نصب dependencies
-RUN npm ci --only=production
+# نصب dependencies (بجای npm ci از npm install استفاده می‌کنیم)
+RUN npm install --only=production
 
 # کپی کد
 COPY . .
@@ -18,8 +20,8 @@ COPY . .
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# expose port
+# expose کردن پورت
 EXPOSE 3000
 
-# دستور اجرا (مهم!)
+# اجرای سرور
 CMD ["node", "server.js"]
