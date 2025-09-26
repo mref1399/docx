@@ -10,13 +10,10 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'DOCX Converter API', version: '1.0.0', uptime: process.uptime() });
-});
-
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
+// تشخیص Heading
 function isHeading(text) { return text.trim().startsWith('#'); }
 function getHeadingLevel(text) {
   const match = text.match(/^#+/);
@@ -24,35 +21,64 @@ function getHeadingLevel(text) {
 }
 function cleanHeadingText(text) { return text.replace(/^#+\s*/, ''); }
 
-function baseFont() {
-  return {
-    ascii: 'Times New Roman',
-    hansi: 'Times New Roman',
-    cs: 'B Nazanin'
+// تابع تشخیص نوع کاراکتر و تنظیم فونت
+function createRunsWithAutoFontSwitch(line) {
+  const runs = [];
+  let buffer = '';
+  let currentScript = null;
+
+  const flushBuffer = () => {
+    if (!buffer) return;
+    const isPersian = currentScript === 'fa';
+    runs.push(new TextRun({
+      text: buffer,
+      size: 28,
+      font: isPersian
+        ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
+        : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' }
+    }));
+    buffer = '';
   };
+
+  for (const char of line) {
+    const code = char.charCodeAt(0);
+    let script;
+
+    if ((code >= 0x0600 && code <= 0x06FF) || // عربی/فارسی
+        (code >= 0x0750 && code <= 0x077F) ||
+        (code >= 0xFB50 && code <= 0xFDFF) ||
+        (code >= 0xFE70 && code <= 0xFEFF)) {
+      script = 'fa';
+    } else {
+      script = 'lat';
+    }
+
+    if (script !== currentScript) {
+      flushBuffer();
+      currentScript = script;
+    }
+    buffer += char;
+  }
+  flushBuffer();
+  return runs;
 }
 
+// تولید پاراگراف‌ها با Auto Font Switching
 function parseTextToParagraphs(text) {
   const lines = text.split('\n');
   const paragraphs = [];
 
   for (let line of lines) {
     line = line.trim();
-
     if (line === '') {
       paragraphs.push(new Paragraph({ children: [new TextRun({ text: '' })], spacing: { after: 0 } }));
       continue;
     }
 
-    // مثال: خطوطی که با $$ شروع شوند فرمول ریاضی هستند
-    if (line.startsWith('$$')) {
+    if (line.startsWith('$$')) { // فرمول ریاضی
       const formula = line.replace(/^\$\$\s*/, '');
       paragraphs.push(new Paragraph({
-        children: [
-          new Math({
-            children: [new MathRun(formula)]
-          })
-        ],
+        children: [new Math({ children: [new MathRun(formula)] })],
         alignment: AlignmentType.JUSTIFIED,
         rightToLeft: true,
         spacing: { line: 240 }
@@ -64,33 +90,15 @@ function parseTextToParagraphs(text) {
       const level = getHeadingLevel(line);
       const headingText = cleanHeadingText(line);
       paragraphs.push(new Paragraph({
-        children: [
-          new TextRun({
-            text: headingText,
-            bold: true,
-            size: 28,
-            font: baseFont()
-          })
-        ],
+        children: createRunsWithAutoFontSwitch(headingText).map(run => run.bold()),
         alignment: AlignmentType.JUSTIFIED,
         rightToLeft: true,
-        spacing: { before: 200, after: 100, line: 240 },
-        indent: { firstLine: 708 },
-        heading: level === 1 ? HeadingLevel.HEADING_1 :
-                 level === 2 ? HeadingLevel.HEADING_2 :
-                 level === 3 ? HeadingLevel.HEADING_3 :
-                 level === 4 ? HeadingLevel.HEADING_4 :
-                 level === 5 ? HeadingLevel.HEADING_5 : HeadingLevel.HEADING_6
+        spacing: { line: 240 },
+        heading: HeadingLevel[`HEADING_${level}`] || HeadingLevel.HEADING_6
       }));
     } else {
       paragraphs.push(new Paragraph({
-        children: [
-          new TextRun({
-            text: line,
-            size: 28,
-            font: baseFont()
-          })
-        ],
+        children: createRunsWithAutoFontSwitch(line),
         style: 'Normal',
         alignment: AlignmentType.JUSTIFIED,
         rightToLeft: true,
@@ -99,10 +107,10 @@ function parseTextToParagraphs(text) {
       }));
     }
   }
-
   return paragraphs;
 }
 
+// وبهوک
 app.post('/webhook', async (req, res) => {
   try {
     const { text } = req.body;
@@ -112,16 +120,13 @@ app.post('/webhook', async (req, res) => {
 
     const doc = new Document({
       sections: [{
-        properties: {
-          page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } },
-          bidirectional: true
-        },
+        properties: { bidirectional: true },
         children: paragraphs
       }],
       styles: {
         default: {
           document: {
-            run: { size: 28, font: baseFont() },
+            run: { size: 28, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } },
             paragraph: {
               alignment: AlignmentType.JUSTIFIED,
               rightToLeft: true,
@@ -129,24 +134,12 @@ app.post('/webhook', async (req, res) => {
               indent: { firstLine: 708 }
             }
           }
-        },
-        paragraphStyles: [{
-          id: 'Normal',
-          name: 'Normal',
-          run: { size: 28, font: baseFont() },
-          paragraph: {
-            alignment: AlignmentType.JUSTIFIED,
-            rightToLeft: true,
-            spacing: { line: 240, after: 0, before: 0 },
-            indent: { firstLine: 708 }
-          }
-        }]
+        }
       }
     });
 
     const fileName = `document_${Date.now()}.docx`;
     const filePath = path.join(uploadsDir, fileName);
-
     const buffer = await Packer.toBuffer(doc);
     fs.writeFileSync(filePath, buffer);
 
@@ -156,29 +149,19 @@ app.post('/webhook', async (req, res) => {
       fileName,
       fileSize: buffer.length
     });
-
   } catch (error) {
-    console.error('Error creating DOCX file:', error);
-    res.status(500).json({ error: 'Error creating file', success: false, details: error.message });
+    console.error(error);
+    res.status(500).json({ error: 'Error creating file', success: false });
   }
 });
 
+// دانلود
 app.get('/download/:filename', (req, res) => {
-  try {
-    const fileName = req.params.filename;
-    const filePath = path.join(uploadsDir, fileName);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', success: false });
+  const fileName = req.params.filename;
+  const filePath = path.join(uploadsDir, fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', success: false });
 
-    res.download(filePath, fileName, (err) => {
-      if (!err) {
-        setTimeout(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); }, 60000);
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error downloading file', success: false });
-  }
+  res.download(filePath);
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+app.listen(port, () => console.log(`Server running on port ${port}`));
