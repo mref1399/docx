@@ -13,20 +13,22 @@ app.use(express.json());
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// شناسایی سطح عنوان بر اساس تعداد ستاره‌ها
+// امن: شناسایی سطح هدینگ بر اساس تعداد ستاره‌ها
 function getHeadingLevelByStars(text) {
+    if (!text) return 0;
     const match = text.match(/^\*+/);
     if (!match) return 0;
-    const level = match[0].length - 1; // ** => 1, *** => 2 ...
+    const level = match[0].length - 1; // ** => Heading 1, *** => Heading 2 ...
     return level >= 1 && level <= 6 ? level : 0;
 }
 
 // حذف ستاره‌ها از متن عنوان
 function cleanHeadingTextStars(text) {
+    if (!text) return '';
     return text.replace(/^\*+\s*/, '');
 }
 
-// ایجاد TextRun با پشتیبانی از فارسی/انگلیسی و بولد بین **
+// ایجاد TextRun با پشتیبانی فارسی/انگلیسی و بولد بین **
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     if (!line) return runs;
@@ -85,12 +87,13 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
+// پردازش ورودی به آرایه Paragraph
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
 
-    for (let line of lines) {
-        line = line.trim();
+    for (let rawLine of lines) {
+        const line = (rawLine || '').trim();
 
         // خط خالی
         if (line === '') {
@@ -101,21 +104,33 @@ function parseTextToParagraphs(text) {
         // فرمول
         if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
-            paragraphs.push(
-                new Paragraph({
-                    children: [new Math({ children: [new MathRun(formula)] })],
-                    alignment: AlignmentType.JUSTIFIED,
-                    rightToLeft: true,
-                    bidirectional: true
-                })
-            );
+            try {
+                paragraphs.push(
+                    new Paragraph({
+                        children: [new Math({ children: [new MathRun(formula)] })],
+                        alignment: AlignmentType.JUSTIFIED,
+                        rightToLeft: true,
+                        bidirectional: true
+                    })
+                );
+            } catch (err) {
+                console.warn('Math parse error, fallback to text:', formula);
+                paragraphs.push(
+                    new Paragraph({
+                        children: createRunsWithAutoFontSwitch(formula),
+                        alignment: AlignmentType.JUSTIFIED,
+                        rightToLeft: true,
+                        bidirectional: true
+                    })
+                );
+            }
             continue;
         }
 
         // عنوان
         const headingLevel = getHeadingLevelByStars(line);
-        if (headingLevel > 0 && headingLevel <= 6) {
-            const headingText = cleanHeadingTextStars(line) || '';
+        if (headingLevel > 0) {
+            const headingText = cleanHeadingTextStars(line);
             paragraphs.push(
                 new Paragraph({
                     children: createRunsWithAutoFontSwitch(headingText).map(run => {
@@ -143,17 +158,32 @@ function parseTextToParagraphs(text) {
             );
         }
     }
+
+    // اگر هیچ پاراگرافی تولید نشد، پاراگراف پیش‌فرض اضافه کن
+    if (paragraphs.length === 0) {
+        paragraphs.push(
+            new Paragraph({
+                children: [new TextRun({ text: 'Empty document', bold: true })],
+                alignment: AlignmentType.JUSTIFIED,
+                rightToLeft: true,
+                bidirectional: true
+            })
+        );
+    }
+
     return paragraphs;
 }
 
+// مسیر webhook
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
         if (!text || typeof text !== 'string') {
-            return res.status(400).json({ error: 'Invalid text input', success: false });
+            console.warn('Invalid text input => fallback used');
         }
 
-        const paragraphs = parseTextToParagraphs(text);
+        const safeText = typeof text === 'string' ? text : 'Empty document';
+        const paragraphs = parseTextToParagraphs(safeText);
 
         const doc = new Document({
             sections: [
@@ -177,19 +207,14 @@ app.post('/webhook', async (req, res) => {
                             indent: { firstLine: 708 }
                         }
                     }
-                },
-                heading1: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading2: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading3: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading4: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading5: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading6: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } }
+                }
             }
         });
 
         const fileName = `document_${Date.now()}.docx`;
         const filePath = path.join(uploadsDir, fileName);
         const buffer = await Packer.toBuffer(doc);
+
         fs.writeFileSync(filePath, buffer);
 
         res.json({
@@ -199,11 +224,12 @@ app.post('/webhook', async (req, res) => {
             fileSize: buffer.length
         });
     } catch (error) {
-        console.error('Error creating file:', error);
+        console.error('Error creating file =>', error);
         res.status(500).json({ error: 'Error creating file', success: false });
     }
 });
 
+// مسیر دانلود
 app.get('/download/:filename', (req, res) => {
     const filePath = path.join(uploadsDir, req.params.filename);
     if (!fs.existsSync(filePath)) {
