@@ -13,70 +13,66 @@ app.use(express.json());
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// امن: شناسایی سطح هدینگ بر اساس تعداد ستاره‌ها
+// --- هدینگ بر اساس ستاره ---
+function isHeading(text) {
+    return /^\*{2,6}\s*/.test(text.trim());
+}
+
 function getHeadingLevelByStars(text) {
-    if (!text) return 0;
-    const match = text.match(/^\*+/);
+    const match = text.match(/^\*{2,6}/);
     if (!match) return 0;
-    const level = match[0].length - 1; // ** => Heading 1, *** => Heading 2 ...
-    return level >= 1 && level <= 6 ? level : 0;
+    const starCount = match[0].length;
+    const map = { 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 };
+    return map[starCount] || 0;
 }
 
-// حذف ستاره‌ها از متن عنوان
-function cleanHeadingTextStars(text) {
-    if (!text) return '';
-    return text.replace(/^\*+\s*/, '');
+function cleanHeadingText(text) {
+    return text.replace(/^\*{2,6}\s*/, '');
 }
 
-// ایجاد TextRun با پشتیبانی فارسی/انگلیسی و بولد بین **
+// --- ساخت TextRun با تشخیص فونت فارسی/انگلیسی ---
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
-    if (!line) return runs;
-
     let buffer = '';
     let currentScript = null;
     let isFirstRun = true;
-    let boldMode = false;
 
     const flushBuffer = () => {
         if (!buffer) return;
         const isPersian = currentScript === 'fa';
-        runs.push(
-            new TextRun({
-                text: buffer,
-                bold: boldMode,
-                size: 28,
-                font: isPersian
-                    ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
-                    : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' }
-            })
-        );
+        runs.push(new TextRun({
+            text: buffer,
+            size: 28,
+            font: isPersian
+                ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
+                : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' }
+        }));
         buffer = '';
     };
 
     let i = 0;
     while (i < line.length) {
-        if (line.startsWith('**', i)) {
-            flushBuffer();
-            boldMode = !boldMode;
-            i += 2;
-            continue;
-        }
-
         const char = line[i];
         const code = char.charCodeAt(0);
-        const script =
+        let script;
+
+        if (
             (code >= 0x0600 && code <= 0x06FF) ||
             (code >= 0x0750 && code <= 0x077F) ||
             (code >= 0xFB50 && code <= 0xFDFF) ||
             (code >= 0xFE70 && code <= 0xFEFF)
-                ? 'fa'
-                : 'lat';
+        ) {
+            script = 'fa';
+        } else {
+            script = 'lat';
+        }
 
         if (script !== currentScript) {
             flushBuffer();
             currentScript = script;
-            if (isFirstRun && currentScript === 'fa') buffer += '\u200F';
+            if (isFirstRun && currentScript === 'fa') {
+                buffer += '\u200F';
+            }
             isFirstRun = false;
         }
 
@@ -87,111 +83,77 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
-// پردازش ورودی به آرایه Paragraph
+// --- پارس متن به پاراگراف‌ها ---
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
 
-    for (let rawLine of lines) {
-        const line = (rawLine || '').trim();
-
-        // خط خالی
+    for (let line of lines) {
+        line = line.trim();
         if (line === '') {
-            paragraphs.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
+            paragraphs.push(new Paragraph({
+                children: [new TextRun({ text: '' })],
+                spacing: { after: 0 }
+            }));
             continue;
         }
 
-        // فرمول
         if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
-            try {
-                paragraphs.push(
-                    new Paragraph({
-                        children: [new Math({ children: [new MathRun(formula)] })],
-                        alignment: AlignmentType.JUSTIFIED,
-                        rightToLeft: true,
-                        bidirectional: true
-                    })
-                );
-            } catch (err) {
-                console.warn('Math parse error, fallback to text:', formula);
-                paragraphs.push(
-                    new Paragraph({
-                        children: createRunsWithAutoFontSwitch(formula),
-                        alignment: AlignmentType.JUSTIFIED,
-                        rightToLeft: true,
-                        bidirectional: true
-                    })
-                );
-            }
+            paragraphs.push(new Paragraph({
+                children: [new Math({ children: [new MathRun(formula)] })],
+                alignment: AlignmentType.JUSTIFIED,
+                rightToLeft: true,
+                bidirectional: true,
+                spacing: { line: 240 }
+            }));
             continue;
         }
 
-        // عنوان
-        const headingLevel = getHeadingLevelByStars(line);
-        if (headingLevel > 0) {
-            const headingText = cleanHeadingTextStars(line);
-            paragraphs.push(
-                new Paragraph({
-                    children: createRunsWithAutoFontSwitch(headingText).map(run => {
-                        run.bold();
-                        return run;
-                    }),
-                    heading: HeadingLevel[`HEADING_${headingLevel}`],
-                    alignment: AlignmentType.JUSTIFIED,
-                    rightToLeft: true,
-                    bidirectional: true
-                })
-            );
-        } else {
-            // متن معمولی
-            paragraphs.push(
-                new Paragraph({
-                    children: createRunsWithAutoFontSwitch(line),
-                    style: 'Normal',
-                    alignment: AlignmentType.JUSTIFIED,
-                    rightToLeft: true,
-                    bidirectional: true,
-                    spacing: { line: 240, after: 0, before: 0 },
-                    indent: { firstLine: 708 }
-                })
-            );
-        }
-    }
+        if (isHeading(line)) {
+            const level = getHeadingLevelByStars(line);
+            const headingText = cleanHeadingText(line);
+            const runs = createRunsWithAutoFontSwitch(headingText).map(run => {
+                run.bold(); // عنوان هدینگ همیشه بولد
+                return run;
+            });
 
-    // اگر هیچ پاراگرافی تولید نشد، پاراگراف پیش‌فرض اضافه کن
-    if (paragraphs.length === 0) {
-        paragraphs.push(
-            new Paragraph({
-                children: [new TextRun({ text: 'Empty document', bold: true })],
+            paragraphs.push(new Paragraph({
+                children: runs,
                 alignment: AlignmentType.JUSTIFIED,
                 rightToLeft: true,
-                bidirectional: true
-            })
-        );
+                bidirectional: true,
+                spacing: { line: 240 },
+                heading: HeadingLevel[`HEADING_${level}`] || HeadingLevel.HEADING_5
+            }));
+        } else {
+            paragraphs.push(new Paragraph({
+                children: createRunsWithAutoFontSwitch(line),
+                style: 'Normal',
+                alignment: AlignmentType.JUSTIFIED,
+                rightToLeft: true,
+                bidirectional: true,
+                spacing: { line: 240, after: 0, before: 0 },
+                indent: { firstLine: 708 }
+            }));
+        }
     }
-
     return paragraphs;
 }
 
-// مسیر webhook
+// --- API وبهوک ---
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
-        if (!text || typeof text !== 'string') {
-            console.warn('Invalid text input => fallback used');
-        }
+        if (!text) return res.status(400).json({ error: 'Text is required', success: false });
 
-        const safeText = typeof text === 'string' ? text : 'Empty document';
-        const paragraphs = parseTextToParagraphs(safeText);
+        const paragraphs = parseTextToParagraphs(text);
 
         const doc = new Document({
-            sections: [
-                {
-                    properties: { bidirectional: true },
-                    children: paragraphs
-                }
-            ],
+            sections: [{
+                properties: { bidirectional: true },
+                children: paragraphs
+            }],
             styles: {
                 default: {
                     document: {
@@ -207,34 +169,37 @@ app.post('/webhook', async (req, res) => {
                             indent: { firstLine: 708 }
                         }
                     }
-                }
+                },
+                heading1: { run: { bold: true } },
+                heading2: { run: { bold: true } },
+                heading3: { run: { bold: true } },
+                heading4: { run: { bold: true } },
+                heading5: { run: { bold: true } }
             }
         });
 
         const fileName = `document_${Date.now()}.docx`;
         const filePath = path.join(uploadsDir, fileName);
         const buffer = await Packer.toBuffer(doc);
-
         fs.writeFileSync(filePath, buffer);
 
         res.json({
             success: true,
-            downloadUrl: `/download/${fileName}`,
+            downloadUrl: `https://docx.darkube.app/download/${fileName}`,
             fileName,
             fileSize: buffer.length
         });
     } catch (error) {
-        console.error('Error creating file =>', error);
+        console.error(error);
         res.status(500).json({ error: 'Error creating file', success: false });
     }
 });
 
-// مسیر دانلود
 app.get('/download/:filename', (req, res) => {
-    const filePath = path.join(uploadsDir, req.params.filename);
-    if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: 'File not found', success: false });
-    }
+    const fileName = req.params.filename;
+    const filePath = path.join(uploadsDir, fileName);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', success: false });
+
     res.download(filePath);
 });
 
