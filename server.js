@@ -13,28 +13,18 @@ app.use(express.json());
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// شناسایی لول عنوان بر اساس تعداد ستاره‌ها
+// شناسایی سطح عنوان بر اساس تعداد ستاره‌ها (n+1 ستاره => Heading n)
 function getHeadingLevelByStars(text) {
     const match = text.match(/^\*+/);
-    return match ? Math.min(match[0].length - 1, 6) : 0; // ** => 1, *** => 2
+    return match ? Math.min(match[0].length - 1, 6) : 0; // ** => 1, *** => 2, ...
 }
 
-// پاک کردن ستاره‌ها از متن عنوان
+// حذف ستاره‌ها از متن عنوان
 function cleanHeadingTextStars(text) {
     return text.replace(/^\*+\s*/, '');
 }
 
-// شماره‌گذاری خودکار برای عناوین
-const headingCounters = [0, 0, 0, 0, 0, 0];
-function getHeadingNumber(level) {
-    headingCounters[level - 1] += 1;
-    for (let i = level; i < headingCounters.length; i++) {
-        headingCounters[i] = 0;
-    }
-    return headingCounters.slice(0, level).join('.');
-}
-
-// ایجاد TextRun با تشخیص اسکریپت و بولد شدن متن بین **
+// ایجاد TextRun با پشتیبانی از فارسی/انگلیسی و بولد بین **
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -96,19 +86,21 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
-// تبدیل متن ورودی به پاراگراف‌ها
+// پارس متن ورودی به پاراگراف‌ها
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
 
     for (let line of lines) {
         line = line.trim();
+
+        // خط خالی
         if (line === '') {
             paragraphs.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
             continue;
         }
 
-        // فرمول‌ها
+        // فرمول
         if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
             paragraphs.push(new Paragraph({
@@ -120,13 +112,12 @@ function parseTextToParagraphs(text) {
             continue;
         }
 
-        // عناوین
+        // عنوان
         const headingLevel = getHeadingLevelByStars(line);
         if (headingLevel > 0) {
             const headingText = cleanHeadingTextStars(line);
-            const headingNum = getHeadingNumber(headingLevel);
             paragraphs.push(new Paragraph({
-                children: createRunsWithAutoFontSwitch(`${headingNum} ${headingText}`).map(run => {
+                children: createRunsWithAutoFontSwitch(headingText).map(run => {
                     run.bold();
                     return run;
                 }),
@@ -142,14 +133,16 @@ function parseTextToParagraphs(text) {
                 style: 'Normal',
                 alignment: AlignmentType.JUSTIFIED,
                 rightToLeft: true,
-                bidirectional: true
+                bidirectional: true,
+                spacing: { line: 240, after: 0, before: 0 },
+                indent: { firstLine: 708 }
             }));
         }
     }
     return paragraphs;
 }
 
-// مسیر وبهوک برای تولید فایل
+// وبهوک برای تولید فایل docx
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
@@ -172,7 +165,9 @@ app.post('/webhook', async (req, res) => {
                         paragraph: {
                             alignment: AlignmentType.JUSTIFIED,
                             rightToLeft: true,
-                            bidirectional: true
+                            bidirectional: true,
+                            spacing: { line: 240, after: 0, before: 0 },
+                            indent: { firstLine: 708 }
                         }
                     }
                 },
