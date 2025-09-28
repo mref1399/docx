@@ -13,10 +13,12 @@ app.use(express.json());
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// شناسایی سطح عنوان بر اساس تعداد ستاره‌ها (n+1 ستاره => Heading n)
+// شناسایی سطح عنوان بر اساس تعداد ستاره‌ها
 function getHeadingLevelByStars(text) {
     const match = text.match(/^\*+/);
-    return match ? Math.min(match[0].length - 1, 6) : 0; // ** => 1, *** => 2, ...
+    if (!match) return 0;
+    const level = match[0].length - 1; // ** => 1, *** => 2 ...
+    return level >= 1 && level <= 6 ? level : 0;
 }
 
 // حذف ستاره‌ها از متن عنوان
@@ -27,6 +29,8 @@ function cleanHeadingTextStars(text) {
 // ایجاد TextRun با پشتیبانی از فارسی/انگلیسی و بولد بین **
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
+    if (!line) return runs;
+
     let buffer = '';
     let currentScript = null;
     let isFirstRun = true;
@@ -35,14 +39,16 @@ function createRunsWithAutoFontSwitch(line) {
     const flushBuffer = () => {
         if (!buffer) return;
         const isPersian = currentScript === 'fa';
-        runs.push(new TextRun({
-            text: buffer,
-            bold: boldMode,
-            size: 28,
-            font: isPersian
-                ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
-                : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' }
-        }));
+        runs.push(
+            new TextRun({
+                text: buffer,
+                bold: boldMode,
+                size: 28,
+                font: isPersian
+                    ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
+                    : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' }
+            })
+        );
         buffer = '';
     };
 
@@ -57,25 +63,18 @@ function createRunsWithAutoFontSwitch(line) {
 
         const char = line[i];
         const code = char.charCodeAt(0);
-        let script;
-
-        if (
+        const script =
             (code >= 0x0600 && code <= 0x06FF) ||
             (code >= 0x0750 && code <= 0x077F) ||
             (code >= 0xFB50 && code <= 0xFDFF) ||
             (code >= 0xFE70 && code <= 0xFEFF)
-        ) {
-            script = 'fa';
-        } else {
-            script = 'lat';
-        }
+                ? 'fa'
+                : 'lat';
 
         if (script !== currentScript) {
             flushBuffer();
             currentScript = script;
-            if (isFirstRun && currentScript === 'fa') {
-                buffer += '\u200F';
-            }
+            if (isFirstRun && currentScript === 'fa') buffer += '\u200F';
             isFirstRun = false;
         }
 
@@ -86,7 +85,6 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
-// پارس متن ورودی به پاراگراف‌ها
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
@@ -103,58 +101,67 @@ function parseTextToParagraphs(text) {
         // فرمول
         if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
-            paragraphs.push(new Paragraph({
-                children: [new Math({ children: [new MathRun(formula)] })],
-                alignment: AlignmentType.JUSTIFIED,
-                rightToLeft: true,
-                bidirectional: true
-            }));
+            paragraphs.push(
+                new Paragraph({
+                    children: [new Math({ children: [new MathRun(formula)] })],
+                    alignment: AlignmentType.JUSTIFIED,
+                    rightToLeft: true,
+                    bidirectional: true
+                })
+            );
             continue;
         }
 
         // عنوان
         const headingLevel = getHeadingLevelByStars(line);
-        if (headingLevel > 0) {
-            const headingText = cleanHeadingTextStars(line);
-            paragraphs.push(new Paragraph({
-                children: createRunsWithAutoFontSwitch(headingText).map(run => {
-                    run.bold();
-                    return run;
-                }),
-                heading: HeadingLevel[`HEADING_${headingLevel}`],
-                alignment: AlignmentType.JUSTIFIED,
-                rightToLeft: true,
-                bidirectional: true
-            }));
+        if (headingLevel > 0 && headingLevel <= 6) {
+            const headingText = cleanHeadingTextStars(line) || '';
+            paragraphs.push(
+                new Paragraph({
+                    children: createRunsWithAutoFontSwitch(headingText).map(run => {
+                        run.bold();
+                        return run;
+                    }),
+                    heading: HeadingLevel[`HEADING_${headingLevel}`],
+                    alignment: AlignmentType.JUSTIFIED,
+                    rightToLeft: true,
+                    bidirectional: true
+                })
+            );
         } else {
             // متن معمولی
-            paragraphs.push(new Paragraph({
-                children: createRunsWithAutoFontSwitch(line),
-                style: 'Normal',
-                alignment: AlignmentType.JUSTIFIED,
-                rightToLeft: true,
-                bidirectional: true,
-                spacing: { line: 240, after: 0, before: 0 },
-                indent: { firstLine: 708 }
-            }));
+            paragraphs.push(
+                new Paragraph({
+                    children: createRunsWithAutoFontSwitch(line),
+                    style: 'Normal',
+                    alignment: AlignmentType.JUSTIFIED,
+                    rightToLeft: true,
+                    bidirectional: true,
+                    spacing: { line: 240, after: 0, before: 0 },
+                    indent: { firstLine: 708 }
+                })
+            );
         }
     }
     return paragraphs;
 }
 
-// وبهوک برای تولید فایل docx
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
-        if (!text) return res.status(400).json({ error: 'Text is required', success: false });
+        if (!text || typeof text !== 'string') {
+            return res.status(400).json({ error: 'Invalid text input', success: false });
+        }
 
         const paragraphs = parseTextToParagraphs(text);
 
         const doc = new Document({
-            sections: [{
-                properties: { bidirectional: true },
-                children: paragraphs
-            }],
+            sections: [
+                {
+                    properties: { bidirectional: true },
+                    children: paragraphs
+                }
+            ],
             styles: {
                 default: {
                     document: {
@@ -187,21 +194,21 @@ app.post('/webhook', async (req, res) => {
 
         res.json({
             success: true,
-            downloadUrl: `https://docx.darkube.app/download/${fileName}`,
+            downloadUrl: `/download/${fileName}`,
             fileName,
             fileSize: buffer.length
         });
     } catch (error) {
-        console.error(error);
+        console.error('Error creating file:', error);
         res.status(500).json({ error: 'Error creating file', success: false });
     }
 });
 
-// مسیر دانلود فایل
 app.get('/download/:filename', (req, res) => {
-    const fileName = req.params.filename;
-    const filePath = path.join(uploadsDir, fileName);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', success: false });
+    const filePath = path.join(uploadsDir, req.params.filename);
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found', success: false });
+    }
     res.download(filePath);
 });
 
