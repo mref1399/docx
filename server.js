@@ -21,18 +21,20 @@ function getHeadingLevel(text) {
 }
 function cleanHeadingText(text) { return text.replace(/^#+\s*/, ''); }
 
-// ایجاد TextRun با سوییچ خودکار فونت و علامت RTL
+// ایجاد TextRun با سوییچ فونت و پشتیبانی از **بولد**
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
     let currentScript = null;
     let isFirstRun = true;
+    let boldMode = false;
 
     const flushBuffer = () => {
         if (!buffer) return;
         const isPersian = currentScript === 'fa';
         runs.push(new TextRun({
             text: buffer,
+            bold: boldMode,
             size: 28,
             font: isPersian
                 ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
@@ -41,12 +43,21 @@ function createRunsWithAutoFontSwitch(line) {
         buffer = '';
     };
 
-    for (const char of line) {
+    let i = 0;
+    while (i < line.length) {
+        if (line.startsWith('**', i)) {
+            flushBuffer();
+            boldMode = !boldMode;
+            i += 2;
+            continue;
+        }
+
+        const char = line[i];
         const code = char.charCodeAt(0);
         let script;
 
         if (
-            (code >= 0x0600 && code <= 0x06FF) || // فارسی/عربی
+            (code >= 0x0600 && code <= 0x06FF) ||
             (code >= 0x0750 && code <= 0x077F) ||
             (code >= 0xFB50 && code <= 0xFDFF) ||
             (code >= 0xFE70 && code <= 0xFEFF)
@@ -59,14 +70,14 @@ function createRunsWithAutoFontSwitch(line) {
         if (script !== currentScript) {
             flushBuffer();
             currentScript = script;
-            // اگر اولین بخش متن فارسی است، RTL Mark اضافه شود
             if (isFirstRun && currentScript === 'fa') {
-                buffer += '\u200F'; // RTL Mark
+                buffer += '\u200F';
             }
             isFirstRun = false;
         }
 
         buffer += char;
+        i++;
     }
     flushBuffer();
     return runs;
@@ -87,7 +98,7 @@ function parseTextToParagraphs(text) {
             continue;
         }
 
-        if (line.startsWith('$$')) { // فرمول ریاضی
+        if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
             paragraphs.push(new Paragraph({
                 children: [new Math({ children: [new MathRun(formula)] })],
@@ -103,7 +114,10 @@ function parseTextToParagraphs(text) {
             const level = getHeadingLevel(line);
             const headingText = cleanHeadingText(line);
             paragraphs.push(new Paragraph({
-                children: createRunsWithAutoFontSwitch(headingText).map(run => run.bold()),
+                children: createRunsWithAutoFontSwitch(headingText).map(run => {
+                    run.bold();
+                    return run;
+                }),
                 alignment: AlignmentType.JUSTIFIED,
                 rightToLeft: true,
                 bidirectional: true,
@@ -149,7 +163,13 @@ app.post('/webhook', async (req, res) => {
                             indent: { firstLine: 708 }
                         }
                     }
-                }
+                },
+                heading1: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading2: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading3: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading4: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading5: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading6: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } }
             }
         });
 
