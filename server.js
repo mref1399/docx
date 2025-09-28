@@ -13,35 +13,28 @@ app.use(express.json());
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// --- هدینگ بر اساس ستاره ---
-function isHeading(text) {
-    return /^\*{2,6}\s*/.test(text.trim());
+// تشخیص Heading
+function isHeading(text) { return text.trim().startsWith('#'); }
+function getHeadingLevel(text) {
+    const match = text.match(/^#+/);
+    return match ? Math.min(match[0].length, 6) : 0;
 }
+function cleanHeadingText(text) { return text.replace(/^#+\s*/, ''); }
 
-function getHeadingLevelByStars(text) {
-    const match = text.match(/^\*{2,6}/);
-    if (!match) return 0;
-    const starCount = match[0].length;
-    const map = { 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 };
-    return map[starCount] || 0;
-}
-
-function cleanHeadingText(text) {
-    return text.replace(/^\*{2,6}\s*/, '');
-}
-
-// --- ساخت TextRun با تشخیص فونت فارسی/انگلیسی ---
+// ایجاد TextRun با سوییچ فونت و پشتیبانی از **بولد**
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
     let currentScript = null;
     let isFirstRun = true;
+    let boldMode = false;
 
     const flushBuffer = () => {
         if (!buffer) return;
         const isPersian = currentScript === 'fa';
         runs.push(new TextRun({
             text: buffer,
+            bold: boldMode,
             size: 28,
             font: isPersian
                 ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
@@ -52,6 +45,13 @@ function createRunsWithAutoFontSwitch(line) {
 
     let i = 0;
     while (i < line.length) {
+        if (line.startsWith('**', i)) {
+            flushBuffer();
+            boldMode = !boldMode;
+            i += 2;
+            continue;
+        }
+
         const char = line[i];
         const code = char.charCodeAt(0);
         let script;
@@ -83,7 +83,7 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
-// --- پارس متن به پاراگراف‌ها ---
+// پارس متن به پاراگراف‌ها
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
@@ -111,20 +111,18 @@ function parseTextToParagraphs(text) {
         }
 
         if (isHeading(line)) {
-            const level = getHeadingLevelByStars(line);
+            const level = getHeadingLevel(line);
             const headingText = cleanHeadingText(line);
-            const runs = createRunsWithAutoFontSwitch(headingText).map(run => {
-                run.bold(); // عنوان هدینگ همیشه بولد
-                return run;
-            });
-
             paragraphs.push(new Paragraph({
-                children: runs,
+                children: createRunsWithAutoFontSwitch(headingText).map(run => {
+                    run.bold();
+                    return run;
+                }),
                 alignment: AlignmentType.JUSTIFIED,
                 rightToLeft: true,
                 bidirectional: true,
                 spacing: { line: 240 },
-                heading: HeadingLevel[`HEADING_${level}`] || HeadingLevel.HEADING_5
+                heading: HeadingLevel[`HEADING_${level}`] || HeadingLevel.HEADING_6
             }));
         } else {
             paragraphs.push(new Paragraph({
@@ -141,7 +139,6 @@ function parseTextToParagraphs(text) {
     return paragraphs;
 }
 
-// --- API وبهوک ---
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
@@ -157,10 +154,7 @@ app.post('/webhook', async (req, res) => {
             styles: {
                 default: {
                     document: {
-                        run: {
-                            size: 28,
-                            font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
-                        },
+                        run: { size: 28, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } },
                         paragraph: {
                             alignment: AlignmentType.JUSTIFIED,
                             rightToLeft: true,
@@ -170,11 +164,12 @@ app.post('/webhook', async (req, res) => {
                         }
                     }
                 },
-                heading1: { run: { bold: true } },
-                heading2: { run: { bold: true } },
-                heading3: { run: { bold: true } },
-                heading4: { run: { bold: true } },
-                heading5: { run: { bold: true } }
+                heading1: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading2: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading3: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading4: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading5: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
+                heading6: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } }
             }
         });
 
