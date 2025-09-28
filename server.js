@@ -13,15 +13,28 @@ app.use(express.json());
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// تشخیص Heading
-function isHeading(text) { return text.trim().startsWith('#'); }
-function getHeadingLevel(text) {
-    const match = text.match(/^#+/);
-    return match ? Math.min(match[0].length, 6) : 0;
+// شناسایی لول عنوان بر اساس تعداد ستاره‌ها
+function getHeadingLevelByStars(text) {
+    const match = text.match(/^\*+/);
+    return match ? Math.min(match[0].length - 1, 6) : 0; // ** => 1, *** => 2
 }
-function cleanHeadingText(text) { return text.replace(/^#+\s*/, ''); }
 
-// ایجاد TextRun با سوییچ فونت و پشتیبانی از **بولد**
+// پاک کردن ستاره‌ها از متن عنوان
+function cleanHeadingTextStars(text) {
+    return text.replace(/^\*+\s*/, '');
+}
+
+// شماره‌گذاری خودکار برای عناوین
+const headingCounters = [0, 0, 0, 0, 0, 0];
+function getHeadingNumber(level) {
+    headingCounters[level - 1] += 1;
+    for (let i = level; i < headingCounters.length; i++) {
+        headingCounters[i] = 0;
+    }
+    return headingCounters.slice(0, level).join('.');
+}
+
+// ایجاد TextRun با تشخیص اسکریپت و بولد شدن متن بین **
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -83,7 +96,7 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
-// پارس متن به پاراگراف‌ها
+// تبدیل متن ورودی به پاراگراف‌ها
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
@@ -91,54 +104,52 @@ function parseTextToParagraphs(text) {
     for (let line of lines) {
         line = line.trim();
         if (line === '') {
-            paragraphs.push(new Paragraph({
-                children: [new TextRun({ text: '' })],
-                spacing: { after: 0 }
-            }));
+            paragraphs.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
             continue;
         }
 
+        // فرمول‌ها
         if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
             paragraphs.push(new Paragraph({
                 children: [new Math({ children: [new MathRun(formula)] })],
                 alignment: AlignmentType.JUSTIFIED,
                 rightToLeft: true,
-                bidirectional: true,
-                spacing: { line: 240 }
+                bidirectional: true
             }));
             continue;
         }
 
-        if (isHeading(line)) {
-            const level = getHeadingLevel(line);
-            const headingText = cleanHeadingText(line);
+        // عناوین
+        const headingLevel = getHeadingLevelByStars(line);
+        if (headingLevel > 0) {
+            const headingText = cleanHeadingTextStars(line);
+            const headingNum = getHeadingNumber(headingLevel);
             paragraphs.push(new Paragraph({
-                children: createRunsWithAutoFontSwitch(headingText).map(run => {
+                children: createRunsWithAutoFontSwitch(`${headingNum} ${headingText}`).map(run => {
                     run.bold();
                     return run;
                 }),
+                heading: HeadingLevel[`HEADING_${headingLevel}`],
                 alignment: AlignmentType.JUSTIFIED,
                 rightToLeft: true,
-                bidirectional: true,
-                spacing: { line: 240 },
-                heading: HeadingLevel[`HEADING_${level}`] || HeadingLevel.HEADING_6
+                bidirectional: true
             }));
         } else {
+            // متن معمولی
             paragraphs.push(new Paragraph({
                 children: createRunsWithAutoFontSwitch(line),
                 style: 'Normal',
                 alignment: AlignmentType.JUSTIFIED,
                 rightToLeft: true,
-                bidirectional: true,
-                spacing: { line: 240, after: 0, before: 0 },
-                indent: { firstLine: 708 }
+                bidirectional: true
             }));
         }
     }
     return paragraphs;
 }
 
+// مسیر وبهوک برای تولید فایل
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
@@ -154,13 +165,14 @@ app.post('/webhook', async (req, res) => {
             styles: {
                 default: {
                     document: {
-                        run: { size: 28, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } },
+                        run: {
+                            size: 28,
+                            font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
+                        },
                         paragraph: {
                             alignment: AlignmentType.JUSTIFIED,
                             rightToLeft: true,
-                            bidirectional: true,
-                            spacing: { line: 240, after: 0, before: 0 },
-                            indent: { firstLine: 708 }
+                            bidirectional: true
                         }
                     }
                 },
@@ -190,11 +202,11 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// مسیر دانلود فایل
 app.get('/download/:filename', (req, res) => {
     const fileName = req.params.filename;
     const filePath = path.join(uploadsDir, fileName);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', success: false });
-
     res.download(filePath);
 });
 
