@@ -8,7 +8,10 @@ const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
-app.use(express.json());
+
+// افزایش سقف حجم ورودی به 100 مگابایت
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
@@ -56,7 +59,6 @@ function createRunsWithAutoFontSwitch(line) {
     let i = 0;
     while (i < line.length) {
         if (line[i] === '*') {
-            // شمارش تعداد * پشت‌سرهم
             let starCount = 0;
             while (line[i] === '*') {
                 starCount++;
@@ -65,9 +67,9 @@ function createRunsWithAutoFontSwitch(line) {
             if (starCount >= 2) {
                 flushBuffer();
                 boldMode = !boldMode;
-                continue; // همه * حذف می‌شود
+                continue;
             } else {
-                buffer += '*'; // اگر فقط یک *
+                buffer += '*';
                 continue;
             }
         }
