@@ -19,16 +19,16 @@ function getHeadingLevel(text) {
     const match = text.match(/^#+/);
     return match ? Math.min(match[0].length, 6) : 0;
 }
-function cleanHeadingText(text) { return text.replace(/^#+\s*/, ''); }
-
-// برعکس کردن فقط براکت‌ها
-function reverseBrackets(str) {
-    return str.replace(/[\[\]]/g, match => {
-        return match === '[' ? ']' : '[';
-    });
+function cleanHeadingText(text) {
+    return text.replace(/^#+\s*/, '').replace(/\s*#+$/, '');
 }
 
-// ایجاد TextRun با حفظ راست‌به‌چپ حتی برای انگلیسی و برعکس‌کردن براکت‌ها
+// برعکس کردن براکت‌ها
+function reverseBrackets(str) {
+    return str.replace(/\[|\]/g, match => match === '[' ? ']' : '[');
+}
+
+// ایجاد TextRun با حذف ** اضافی و حفظ RTL
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -38,9 +38,10 @@ function createRunsWithAutoFontSwitch(line) {
 
     const flushBuffer = () => {
         if (!buffer) return;
+        const processedText = reverseBrackets(buffer);
         const isPersian = currentScript === 'fa';
         runs.push(new TextRun({
-            text: reverseBrackets(buffer),
+            text: processedText,
             bold: boldMode,
             size: 28,
             font: isPersian
@@ -54,17 +55,26 @@ function createRunsWithAutoFontSwitch(line) {
 
     let i = 0;
     while (i < line.length) {
-        if (line.startsWith('**', i)) {
-            flushBuffer();
-            boldMode = !boldMode;
-            i += 2;
-            continue;
+        if (line[i] === '*') {
+            // شمارش تعداد * پشت‌سرهم
+            let starCount = 0;
+            while (line[i] === '*') {
+                starCount++;
+                i++;
+            }
+            if (starCount >= 2) {
+                flushBuffer();
+                boldMode = !boldMode;
+                continue; // همه * حذف می‌شود
+            } else {
+                buffer += '*'; // اگر فقط یک *
+                continue;
+            }
         }
 
         const char = line[i];
         const code = char.charCodeAt(0);
         let script;
-
         if (
             (code >= 0x0600 && code <= 0x06FF) ||
             (code >= 0x0750 && code <= 0x077F) ||
@@ -92,7 +102,7 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
-// پارس متن به پاراگراف‌ها
+// تبدیل متن به پاراگراف
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
@@ -148,6 +158,7 @@ function parseTextToParagraphs(text) {
     return paragraphs;
 }
 
+// API اصلی
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
@@ -159,27 +170,7 @@ app.post('/webhook', async (req, res) => {
             sections: [{
                 properties: { bidirectional: true },
                 children: paragraphs
-            }],
-            styles: {
-                default: {
-                    document: {
-                        run: { size: 28, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } },
-                        paragraph: {
-                            alignment: AlignmentType.JUSTIFIED,
-                            rightToLeft: true,
-                            bidirectional: true,
-                            spacing: { line: 240, after: 0, before: 0 },
-                            indent: { firstLine: 708 }
-                        }
-                    }
-                },
-                heading1: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading2: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading3: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading4: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading5: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } },
-                heading6: { run: { bold: true, font: { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' } } }
-            }
+            }]
         });
 
         const fileName = `document_${Date.now()}.docx`;
@@ -199,6 +190,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// Endpoint دانلود
 app.get('/download/:filename', (req, res) => {
     const fileName = req.params.filename;
     const filePath = path.join(uploadsDir, fileName);
