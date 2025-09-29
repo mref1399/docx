@@ -21,7 +21,14 @@ function getHeadingLevel(text) {
 }
 function cleanHeadingText(text) { return text.replace(/^#+\s*/, ''); }
 
-// ایجاد TextRun با سوییچ فونت و پشتیبانی از **بولد**
+// برعکس کردن فقط براکت‌ها
+function reverseBrackets(str) {
+    return str.replace(/[\[\]]/g, match => {
+        return match === '[' ? ']' : '[';
+    });
+}
+
+// ایجاد TextRun با حفظ راست‌به‌چپ حتی برای انگلیسی و برعکس‌کردن براکت‌ها
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -33,12 +40,14 @@ function createRunsWithAutoFontSwitch(line) {
         if (!buffer) return;
         const isPersian = currentScript === 'fa';
         runs.push(new TextRun({
-            text: buffer,
+            text: reverseBrackets(buffer),
             bold: boldMode,
             size: 28,
             font: isPersian
                 ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
-                : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' }
+                : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' },
+            rightToLeft: true,
+            bidirectional: true
         }));
         buffer = '';
     };
@@ -92,7 +101,7 @@ function parseTextToParagraphs(text) {
         line = line.trim();
         if (line === '') {
             paragraphs.push(new Paragraph({
-                children: [new TextRun({ text: '' })],
+                children: [new TextRun({ text: '', rightToLeft: true, bidirectional: true })],
                 spacing: { after: 0 }
             }));
             continue;
@@ -194,7 +203,6 @@ app.get('/download/:filename', (req, res) => {
     const fileName = req.params.filename;
     const filePath = path.join(uploadsDir, fileName);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', success: false });
-
     res.download(filePath);
 });
 
