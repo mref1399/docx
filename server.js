@@ -9,7 +9,6 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// افزایش سقف حجم ورودی به 100 مگابایت
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
@@ -26,12 +25,10 @@ function cleanHeadingText(text) {
     return text.replace(/^#+\s*/, '').replace(/\s*#+$/, '');
 }
 
-// برعکس کردن براکت‌ها
 function reverseBrackets(str) {
     return str.replace(/\[|\]/g, match => match === '[' ? ']' : '[');
 }
 
-// ایجاد TextRun با حذف ** اضافی و حفظ RTL
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -104,7 +101,6 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
-// تبدیل متن به پاراگراف
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
@@ -160,7 +156,6 @@ function parseTextToParagraphs(text) {
     return paragraphs;
 }
 
-// API اصلی
 app.post('/webhook', async (req, res) => {
     try {
         const { text } = req.body;
