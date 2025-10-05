@@ -15,7 +15,6 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// تشخیص Heading
 function isHeading(text) { return text.trim().startsWith('#'); }
 function getHeadingLevel(text) {
     const match = text.match(/^#+/);
@@ -187,7 +186,6 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Endpoint دانلود
 app.get('/download/:filename', (req, res) => {
     const fileName = req.params.filename;
     const filePath = path.join(uploadsDir, fileName);
