@@ -12,9 +12,6 @@ const port = process.env.PORT || 3000;
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-
 function isHeading(text) { return text.trim().startsWith('#'); }
 function getHeadingLevel(text) {
     const match = text.match(/^#+/);
@@ -155,13 +152,13 @@ function parseTextToParagraphs(text) {
     return paragraphs;
 }
 
-app.post('/webhook', async (req, res) => {
+// Direct DOCX output on POST /
+app.post('/', async (req, res) => {
     try {
         const { text } = req.body;
-        if (!text) return res.status(400).json({ error: 'Text is required', success: false });
+        if (!text) return res.status(400).send('Text is required');
 
         const paragraphs = parseTextToParagraphs(text);
-
         const doc = new Document({
             sections: [{
                 properties: { bidirectional: true },
@@ -169,28 +166,15 @@ app.post('/webhook', async (req, res) => {
             }]
         });
 
-        const fileName = `document_${Date.now()}.docx`;
-        const filePath = path.join(uploadsDir, fileName);
         const buffer = await Packer.toBuffer(doc);
-        fs.writeFileSync(filePath, buffer);
 
-        res.json({
-            success: true,
-            downloadUrl: `https://docx.darkube.app/download/${fileName}`,
-            fileName,
-            fileSize: buffer.length
-        });
+        res.setHeader('Content-Disposition', 'attachment; filename=document.docx');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.send(buffer);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: 'Error creating file', success: false });
+        res.status(500).send('Error creating file');
     }
-});
-
-app.get('/download/:filename', (req, res) => {
-    const fileName = req.params.filename;
-    const filePath = path.join(uploadsDir, fileName);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', success: false });
-    res.download(filePath);
 });
 
 app.listen(port, () => console.log(`Server running on port ${port}`));
