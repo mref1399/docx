@@ -21,10 +21,6 @@ function cleanHeadingText(text) {
     return text.replace(/^#+\s*/, '').replace(/\s*#+$/, '');
 }
 
-function reverseBrackets(str) {
-    return str.replace(/\[|\]/g, match => match === '[' ? ']' : '[');
-}
-
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -34,8 +30,16 @@ function createRunsWithAutoFontSwitch(line) {
 
     const flushBuffer = () => {
         if (!buffer) return;
-        const processedText = reverseBrackets(buffer);
+        let processedText = buffer; // حذف reverseBrackets
         const isPersian = currentScript === 'fa';
+
+        // علامت‌های جهت‌دهی برای ترکیب فارسی و انگلیسی
+        if (isPersian) {
+            processedText = '\u200F' + processedText; // Right‑to‑Left Mark
+        } else {
+            processedText = '\u200E' + processedText; // Left‑to‑Right Mark
+        }
+
         runs.push(new TextRun({
             text: processedText,
             bold: boldMode,
@@ -84,9 +88,7 @@ function createRunsWithAutoFontSwitch(line) {
         if (script !== currentScript) {
             flushBuffer();
             currentScript = script;
-            if (isFirstRun && currentScript === 'fa') {
-                buffer += '\u200F';
-            }
+            if (isFirstRun && currentScript === 'fa') buffer += '\u200F';
             isFirstRun = false;
         }
 
