@@ -3,8 +3,6 @@ const {
     Document, Packer, Paragraph, TextRun,
     AlignmentType, HeadingLevel, Math, MathRun
 } = require('docx');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -12,6 +10,7 @@ const port = process.env.PORT || 3000;
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
+// ---------- Helper functions ----------
 function isHeading(text) { return text.trim().startsWith('#'); }
 function getHeadingLevel(text) {
     const match = text.match(/^#+/);
@@ -21,6 +20,7 @@ function cleanHeadingText(text) {
     return text.replace(/^#+\s*/, '').replace(/\s*#+$/, '');
 }
 
+// ---------- Font / Script Handling ----------
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -30,24 +30,20 @@ function createRunsWithAutoFontSwitch(line) {
 
     const flushBuffer = () => {
         if (!buffer) return;
-        let processedText = buffer; // حذف reverseBrackets
+        let processedText = buffer;
         const isPersian = currentScript === 'fa';
 
-        // علامت‌های جهت‌دهی برای ترکیب فارسی و انگلیسی
-        if (isPersian) {
-            processedText = '\u200F' + processedText; // Right‑to‑Left Mark
-        } else {
-            processedText = '\u200E' + processedText; // Left‑to‑Right Mark
-        }
+        // Add direction markers
+        processedText = (isPersian ? '\u200F' : '\u200E') + processedText;
 
         runs.push(new TextRun({
             text: processedText,
             bold: boldMode,
-            size: 28,
+            size: 28, // ≈ 14 pt
             font: isPersian
                 ? { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'B Nazanin' }
                 : { ascii: 'Times New Roman', hansi: 'Times New Roman', cs: 'Times New Roman' },
-            rightToLeft: true,
+            rightToLeft: isPersian,     // ✅ فقط بخش فارسی RTL می‌شود
             bidirectional: true
         }));
         buffer = '';
@@ -55,12 +51,10 @@ function createRunsWithAutoFontSwitch(line) {
 
     let i = 0;
     while (i < line.length) {
+        // Markdown-style bold with **
         if (line[i] === '*') {
             let starCount = 0;
-            while (line[i] === '*') {
-                starCount++;
-                i++;
-            }
+            while (line[i] === '*') { starCount++; i++; }
             if (starCount >= 2) {
                 flushBuffer();
                 boldMode = !boldMode;
@@ -73,22 +67,18 @@ function createRunsWithAutoFontSwitch(line) {
 
         const char = line[i];
         const code = char.charCodeAt(0);
-        let script;
-        if (
+        const script =
             (code >= 0x0600 && code <= 0x06FF) ||
             (code >= 0x0750 && code <= 0x077F) ||
             (code >= 0xFB50 && code <= 0xFDFF) ||
             (code >= 0xFE70 && code <= 0xFEFF)
-        ) {
-            script = 'fa';
-        } else {
-            script = 'lat';
-        }
+                ? 'fa'
+                : 'lat';
 
         if (script !== currentScript) {
             flushBuffer();
             currentScript = script;
-            if (isFirstRun && currentScript === 'fa') buffer += '\u200F';
+            if (isFirstRun && script === 'fa') buffer += '\u200F';
             isFirstRun = false;
         }
 
@@ -99,6 +89,7 @@ function createRunsWithAutoFontSwitch(line) {
     return runs;
 }
 
+// ---------- Paragraph builder ----------
 function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
@@ -113,6 +104,7 @@ function parseTextToParagraphs(text) {
             continue;
         }
 
+        // Math line with $$
         if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
             paragraphs.push(new Paragraph({
@@ -125,6 +117,7 @@ function parseTextToParagraphs(text) {
             continue;
         }
 
+        // Headings #
         if (isHeading(line)) {
             const level = getHeadingLevel(line);
             const headingText = cleanHeadingText(line);
@@ -140,10 +133,11 @@ function parseTextToParagraphs(text) {
                 heading: HeadingLevel[`HEADING_${level}`] || HeadingLevel.HEADING_6
             }));
         } else {
+            // Normal text
             paragraphs.push(new Paragraph({
                 children: createRunsWithAutoFontSwitch(line),
                 style: 'Normal',
-                alignment: AlignmentType.JUSTIFIED,
+                alignment: AlignmentType.JUSTIFIED,   // ✅ همه پاراگراف‌ها Justified
                 rightToLeft: true,
                 bidirectional: true,
                 spacing: { line: 240, after: 0, before: 0 },
@@ -151,10 +145,11 @@ function parseTextToParagraphs(text) {
             }));
         }
     }
+
     return paragraphs;
 }
 
-// Direct DOCX output on POST /
+// ---------- Main endpoint ----------
 app.post('/', async (req, res) => {
     try {
         const { text } = req.body;
@@ -175,8 +170,8 @@ app.post('/', async (req, res) => {
         res.send(buffer);
     } catch (error) {
         console.error(error);
-        res.status(500).send('Error creating file');
+        res.status(500).send('Error generating file');
     }
 });
 
-app.listen(port, () => console.log(`Server running on port ${port}`));
+app.listen(port, () => console.log(`✅ Server running on port ${port}`));
