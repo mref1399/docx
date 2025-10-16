@@ -114,10 +114,11 @@ function parseTextToParagraphs(text) {
             const level = getHeadingLevel(line);
             const headingText = cleanHeadingText(line);
             const rtl = isParagraphRTL(headingText);
+            const alignment = rtl ? AlignmentType.JUSTIFIED : AlignmentType.LEFT;
 
             paragraphs.push(new Paragraph({
                 children: createRunsWithAutoFontSwitch(headingText).map(run => run.bold()),
-                alignment: AlignmentType.JUSTIFIED,
+                alignment,
                 heading: HeadingLevel[`HEADING_${level}`] || HeadingLevel.HEADING_6,
                 rightToLeft: rtl,
                 bidirectional: true,
@@ -127,13 +128,16 @@ function parseTextToParagraphs(text) {
         }
 
         const rtl = isParagraphRTL(line);
+        const alignment = rtl ? AlignmentType.JUSTIFIED : AlignmentType.LEFT;
+        const indent = rtl ? { firstLine: 708 } : { left: 0 };
+
         paragraphs.push(new Paragraph({
             children: createRunsWithAutoFontSwitch(line),
-            alignment: AlignmentType.JUSTIFIED,
+            alignment,
             rightToLeft: rtl,
             bidirectional: true,
             spacing: { line: 240, after: 0, before: 0 },
-            indent: rtl ? { firstLine: 708 } : { left: 0 }
+            indent
         }));
     }
 
