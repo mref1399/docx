@@ -1,7 +1,7 @@
 const express = require('express');
 const {
     Document, Packer, Paragraph, TextRun,
-    AlignmentType, HeadingLevel, Math, MathRun
+    AlignmentType, HeadingLevel
 } = require('docx');
 
 const app = express();
@@ -9,6 +9,9 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+const LRM = '\u200E'; // Left-to-right mark
+const RLM = '\u200F'; // Right-to-left mark
 
 function isHeading(text) { return text.trim().startsWith('#'); }
 function getHeadingLevel(text) {
@@ -25,6 +28,19 @@ function isParagraphRTL(line) {
     return persianCount >= latinCount;
 }
 
+function detectScript(char) {
+    const code = char.charCodeAt(0);
+    if (
+        (code >= 0x0600 && code <= 0x06FF) ||
+        (code >= 0x0750 && code <= 0x077F) ||
+        (code >= 0xFB50 && code <= 0xFDFF) ||
+        (code >= 0xFE70 && code <= 0xFEFF)
+    ) {
+        return 'fa';
+    }
+    return 'lat';
+}
+
 function createRunsWithAutoFontSwitch(line) {
     const runs = [];
     let buffer = '';
@@ -34,10 +50,8 @@ function createRunsWithAutoFontSwitch(line) {
     const flushBuffer = () => {
         if (!buffer) return;
         const isPersian = currentScript === 'fa';
-        let processedText = buffer;
-        processedText = (isPersian ? '\u200F' : '\u200E') + processedText;
         runs.push(new TextRun({
-            text: processedText,
+            text: (isPersian ? RLM : LRM) + buffer,
             bold: boldMode,
             size: 28,
             font: isPersian
@@ -49,9 +63,31 @@ function createRunsWithAutoFontSwitch(line) {
         buffer = '';
     };
 
+    const pushScriptedRun = (text, type) => {
+        if (!text) return;
+        const script = detectScript(text[0]);
+        const isPersian = script === 'fa';
+        runs.push(new TextRun({
+            text: (isPersian ? RLM : LRM) + text,
+            bold: boldMode,
+            size: 28,
+            font: isPersian
+                ? { ascii: 'Times New Roman', hAnsi: 'Times New Roman', cs: 'B Nazanin' }
+                : { ascii: 'Times New Roman', hAnsi: 'Times New Roman', cs: 'Times New Roman' },
+            rightToLeft: isPersian,
+            bidirectional: true,
+            superScript: type === 'super',
+            subScript: type === 'sub'
+        }));
+        currentScript = null;
+    };
+
     let i = 0;
     while (i < line.length) {
-        if (line[i] === '*') {
+        const char = line[i];
+
+        // toggle bold when encountering double asterisks
+        if (char === '*') {
             let starCount = 0;
             while (line[i] === '*') { starCount++; i++; }
             if (starCount >= 2) {
@@ -59,20 +95,36 @@ function createRunsWithAutoFontSwitch(line) {
                 boldMode = !boldMode;
                 continue;
             } else {
-                buffer += '*';
+                buffer += '*'.repeat(starCount);
                 continue;
             }
         }
 
-        const char = line[i];
-        const code = char.charCodeAt(0);
-        const script =
-            (code >= 0x0600 && code <= 0x06FF) ||
-            (code >= 0x0750 && code <= 0x077F) ||
-            (code >= 0xFB50 && code <= 0xFDFF) ||
-            (code >= 0xFE70 && code <= 0xFEFF)
-                ? 'fa' : 'lat';
+        // super/sub-script detection (^... or _...)
+        if (char === '^' || char === '_') {
+            const type = char === '^' ? 'super' : 'sub';
+            flushBuffer();
+            i++;
 
+            let value = '';
+            if (line[i] === '{') {
+                i++;
+                while (i < line.length && line[i] !== '}') {
+                    value += line[i];
+                    i++;
+                }
+                if (line[i] === '}') i++; // skip closing brace
+            } else if (i < line.length) {
+                value = line[i];
+                i++;
+            }
+
+            pushScriptedRun(value, type);
+            continue;
+        }
+
+        // normal character handling with script switching
+        const script = detectScript(char);
         if (script !== currentScript) {
             flushBuffer();
             currentScript = script;
@@ -90,8 +142,8 @@ function parseTextToParagraphs(text) {
     const lines = text.split('\n');
     const paragraphs = [];
 
-    for (let line of lines) {
-        line = line.trim();
+    for (let rawLine of lines) {
+        let line = rawLine.trim();
 
         if (line === '') {
             paragraphs.push(new Paragraph({ children: [new TextRun('')], spacing: { after: 0 } }));
@@ -101,11 +153,17 @@ function parseTextToParagraphs(text) {
         if (line.startsWith('$$')) {
             const formula = line.replace(/^\$\$\s*/, '');
             paragraphs.push(new Paragraph({
-                children: [new Math({ children: [new MathRun(formula)] })],
+                children: [
+                    new TextRun({
+                        text: `${LRM}${formula}`,
+                        size: 28,
+                        font: { ascii: 'Cambria Math', hAnsi: 'Cambria Math' }
+                    })
+                ],
                 alignment: AlignmentType.CENTER,
                 rightToLeft: false,
-                bidirectional: true,
-                spacing: { line: 240 }
+                bidirectional: false,
+                spacing: { before: 120, after: 120 }
             }));
             continue;
         }
